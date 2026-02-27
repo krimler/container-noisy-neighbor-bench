@@ -1,0 +1,50 @@
+[
+  {
+    "id": "config-api-gateway",
+    "type": "container_config",
+    "container": "api-gateway",
+    "content": "api-gateway is the front-facing HTTP gateway. CPU limit: 0.5 cores. Memory limit: 256MB. Baseline latency: 5ms. This service is latency-sensitive and serves all external user requests. It should maintain p95 latency under 50ms. CPU usage above 60% indicates potential throttling. Memory above 80% indicates risk of OOM. This service has no batch workloads and should have stable, low resource usage. Any sudden increase in resource consumption likely indicates contention from a neighboring container rather than legitimate load increase."
+  },
+  {
+    "id": "config-user-service",
+    "type": "container_config",
+    "container": "user-service",
+    "content": "user-service handles authentication and user profile queries. CPU limit: 0.5 cores. Memory limit: 256MB. Baseline latency: 8ms. This is a read-heavy service with predictable load patterns. Memory usage should remain below 60% under normal operations. CPU spikes above 40% are unusual unless there is a cache miss storm. If latency increases without a corresponding increase in this service's own CPU usage, the root cause is likely external resource contention from another container on the same host."
+  },
+  {
+    "id": "config-order-service",
+    "type": "container_config",
+    "container": "order-service",
+    "content": "order-service processes order creation and updates. CPU limit: 0.5 cores. Memory limit: 256MB. Baseline latency: 12ms. This service has moderate compute requirements. It performs JSON serialization and validation. Normal CPU usage is 20-35%. Memory is stable around 40-50%. Latency is slightly higher than user-service due to more complex processing. If order-service latency increases while its own metrics remain normal, investigate neighboring containers for resource contention."
+  },
+  {
+    "id": "config-payment-service",
+    "type": "container_config",
+    "container": "payment-service",
+    "content": "payment-service handles payment processing and is the most critical service for business operations. CPU limit: 0.5 cores. Memory limit: 256MB. Baseline latency: 15ms. This service is both latency-sensitive and must maintain high reliability. Any degradation must be investigated immediately. Normal CPU: 15-30%. Normal memory: 35-45%. If payment-service latency exceeds 100ms, it constitutes an SLA violation. CPU throttling on this container is a high-priority issue."
+  },
+  {
+    "id": "config-batch-processor",
+    "type": "container_config",
+    "container": "batch-processor",
+    "content": "batch-processor runs scheduled batch jobs including report generation, data aggregation, and cleanup tasks. CPU limit: 1.0 cores (higher than other services). Memory limit: 512MB. Baseline latency: 20ms (less important). This service is NOT latency-sensitive. It is expected to have periodic high CPU and memory usage during batch runs. However, its higher resource limits mean it can become a noisy neighbor to other containers on the same host. If other containers show degraded performance, batch-processor should be checked first as the potential noisy neighbor due to its higher resource allocation and bursty workload pattern."
+  },
+  {
+    "id": "runbook-noisy-neighbor",
+    "type": "operational_runbook",
+    "container": "all",
+    "content": "NOISY NEIGHBOR DIAGNOSIS RUNBOOK: When one container's latency increases without a proportional increase in its own resource metrics, suspect noisy neighbor contention. Step 1: Check all containers' CPU usage. The container with the highest CPU increase that temporally correlates with the victim's latency increase is the likely noisy neighbor. Step 2: Check memory pressure. A container allocating large memory blocks can cause kernel memory management overhead affecting all containers. Step 3: Check IO. A container doing heavy disk IO can cause IO wait across all containers sharing the same storage. Step 4: Verify temporal correlation. The noisy neighbor's resource spike MUST precede or coincide with the victim's latency degradation. If the victim's metrics degraded first, the root cause is internal to the victim."
+  },
+  {
+    "id": "runbook-remediation",
+    "type": "operational_runbook",
+    "container": "all",
+    "content": "REMEDIATION OPTIONS FOR NOISY NEIGHBOR: Option A (Immediate): Reduce the noisy neighbor's CPU/memory limits via container update. Risk: may impact the noisy neighbor's functionality. Option B (Scheduling): If the noisy neighbor is batch-processor, reschedule batch jobs to off-peak hours. Risk: delayed batch processing. Option C (Isolation): Move the noisy neighbor to a different CPU set using cpuset constraints. Risk: requires host-level configuration. Option D (Throttling): Apply IO bandwidth limits via blkio cgroup settings. Risk: may slow down the noisy neighbor significantly. Always prefer the least disruptive option. For batch-processor: Option B is preferred. For production services: Option C is preferred."
+  },
+  {
+    "id": "knowledge-cfs-throttling",
+    "type": "technical_knowledge",
+    "container": "all",
+    "content": "CFS BANDWIDTH THROTTLING: Linux CFS scheduler enforces CPU limits using quota and period. When a container exceeds its CPU quota within a scheduling period (typically 100ms), it gets throttled. Throttled containers experience increased latency even if average CPU looks low. Key indicator: container's CPU usage near its limit (e.g., >80% of allocated CPUs) combined with increased latency. CFS throttling is invisible to standard CPU percentage metrics — a container can show 45% CPU on a 0.5 core limit, meaning it is using 90% of its allocation and is near throttle threshold. Cascading effect: if a throttled container serves requests to other containers, downstream containers will see increased latency due to slower responses, which increases THEIR CPU usage (more time waiting), potentially triggering a cascade."
+  }
+]
